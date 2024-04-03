@@ -1,0 +1,6 @@
+# Wait 60 seconds before connecting using these details, or login to https://console.neo4j.io to validate the Aura Instance is available
+NEO4J_URI=neo4j+s://c88bce7d.databases.neo4j.io
+NEO4J_USERNAME=neo4j
+NEO4J_PASSWORD=7Ox4GnmURxzfnFJ4vjYXx0MjRqSIQeUgn3a7l9CaLu0
+AURA_INSTANCEID=c88bce7d
+AURA_INSTANCENAME=GPS
