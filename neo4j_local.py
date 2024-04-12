@@ -6,7 +6,7 @@ if len(sys.argv) < 2:
     print("Usage: python3 dataset.py <load>")
     exit()
 
-load = sys.argv[1]=="1"
+load = sys.argv[1]
 
 # Set up the connection parameters
 uri = "bolt://localhost:7687"  # URI of your local Neo4j instance
@@ -35,7 +35,17 @@ if driver is None:
 
 # Load the dataset into Neo4j Aura
 
-if load:
+if load=='2':
+    query = "MATCH (n) DETACH DELETE n"
+    session.run(query)
+    
+    print("Data deleted from Neo4j successfully!")
+    
+    driver.close()
+    session.close()
+    exit()
+
+if load=='1':
     with open("sample_dataset.txt", "r") as file:
         for line in file:
             source, target = line.strip().split("\t")
@@ -51,7 +61,6 @@ if load:
     print("Data loaded into Neo4j successfully!")
 else:
     print("Using Data already loaded into Neo4j.")
-
 
 # Queries
 
@@ -103,7 +112,7 @@ def commonNeighbors(node_id1, node_id2):
 def shortestPath(node_id1, node_id2):
     # Query 5: Get the shortest path between two nodes
     print("\n\nShortest path between nodes ", node_id1, " and ", node_id2, " :")
-    query5 = f"MATCH path = shortestPath((n1)-[:EDGE_TO*]-(n2)) WHERE n1.id = {node_id1} AND n2.id = {node_id2} RETURN nodes(path)"
+    query5 = f"MATCH path = shortestPath((n1)-[:EDGE_TO*]->(n2)) WHERE n1.id = {node_id1} AND n2.id = {node_id2} RETURN nodes(path)"
 
     result5 = session.run(query5)
     for record in result5:
@@ -212,29 +221,31 @@ def clusteringCoefficient(node_id):
 def communityDetection():
     # Query 11: Community detection using the Louvain algorithm
     print("\n\nCommunity detection using the Louvain algorithm: ")
-
-    # query = (
-    #     f"CALL gds.graph.project('myGraph', 'neo4j', "
-    #     "{nodeProjection: 'Node', relationshipProjection: {EDGE_TO: {type: 'EDGE_TO', orientation: 'DIRECTED'}}, includeIntermediateCommunities: true})"
-    # )
-
-    query = "CALL gds.graph.project('myGraph', 'neo4j', {nodeProjection: 'Node', relationshipProjection: {EDGE_TO: {type: 'EDGE_TO', orientation: 'UNDIRECTED'}}})"
-
-    query11 = "CALL gds.louvain.stream('myGraph') YIELD nodeId, communityId, intermediateCommunityIds RETURN gds.util.asNode(nodeId).id AS id, communityId ORDER BY id"
-
-    with driver.session() as session:
-        result = session.run(query)
-        result11 = session.run(query11)
-        for record in result11:
-            node_number = record['id']
-            community_id = record['communityId']
-            print("Node:", node_number, " Community ID:", community_id)
-
+    
+    query11 = (
+        f"CALL gds.louvain.stream('myGraph') "
+        f"YIELD nodeId, communityId "
+        f"RETURN gds.util.asNode(nodeId).id AS id, communityId "
+        f"ORDER BY [communityId, id] ASC"
+    )
+    
+    result11 = session.run(query11)
+    for record in result11:
+        node_number = record['id']
+        community_id = record['communityId']
+        print("Node:", node_number, " Community ID:", community_id)
             
 def pageRank():
     # Query 12: PageRank algorithm
     print("\n\nPageRank algorithm: ")
-    query12 = "CALL gds.pageRank.stream({nodeProjection: 'Node', relationshipProjection: {EDGE_TO: {type: 'EDGE_TO', orientation: 'DIRECTED'}}, maxIterations: 20, dampingFactor: 0.85}) YIELD nodeId, score RETURN gds.util.asNode(nodeId).id AS node, score ORDER BY score DESC"
+
+    query12 = (
+        f"CALL gds.pageRank.stream('myGraph', {{scaler: 'L1Norm'}}) "
+        # f"CALL gds.pageRank.stream('myGraph') "
+        f"YIELD nodeId, score "
+        f"RETURN gds.util.asNode(nodeId).id AS node, score "
+        f"ORDER BY score DESC"
+    )
 
     result12 = session.run(query12)
     for record in result12:
@@ -245,8 +256,14 @@ def pageRank():
 def centrality():
     # Query 13: Centrality measures
     print("\n\nCentrality measures: ")
-    query13 = "CALL gds.pageRank.stream({nodeProjection: 'Node', relationshipProjection: {EDGE_TO: {type: 'EDGE_TO', orientation: 'DIRECTED'}}, maxIterations: 20, dampingFactor: 0.85}) YIELD nodeId, score RETURN gds.util.asNode(nodeId).id AS node, score ORDER BY score DESC"
 
+    query13 = (
+        f"CALL gds.pageRank.stream('myGraph', {{maxIterations: 20, dampingFactor: 0.85}}) "
+        f"YIELD nodeId, score "
+        f"RETURN gds.util.asNode(nodeId).id AS node, score "
+        f"ORDER BY score DESC"
+    )
+    
     result13 = session.run(query13)
     for record in result13:
         node_number = record['node']
@@ -256,7 +273,7 @@ def centrality():
 def connectedComponents():
     # Query 14: Connected components
     print("\n\nConnected components: ")
-    query14 = "CALL gds.wcc.stream({nodeProjection: 'Node', relationshipProjection: {EDGE_TO: {type: 'EDGE_TO', orientation: 'DIRECTED'}}}) YIELD nodeId, componentId RETURN gds.util.asNode(nodeId).id AS node, componentId ORDER BY node"
+    query14 = "CALL gds.wcc.stream('myGraph') YIELD nodeId, componentId RETURN gds.util.asNode(nodeId).id AS node, componentId ORDER BY [componentId, node] ASC"
 
     result14 = session.run(query14)
     for record in result14:
@@ -267,7 +284,35 @@ def connectedComponents():
 def graphSage():
     # Query 15: GraphSAGE algorithm
     print("\n\nGraphSAGE algorithm: ")
-    query15 = "CALL gds.beta.graphSage.stream({nodeProjection: 'Node', relationshipProjection: {EDGE_TO: {type: 'EDGE_TO', orientation: 'DIRECTED'}}, model: 'graphsage-mean', featureProperties: ['id'], aggregator: 'mean', activationFunction: 'sigmoid', sampleSizes: [25, 10], degreeAsProperty: true, epochs: 5, searchDepth: 5, batchSize: 1000, learningRate: 0.01, embeddingSize: 16, 'negativeSampleWeight': 5.0, 'includeProperties': true}) YIELD nodeId, embedding RETURN gds.util.asNode(nodeId).id AS node, embedding ORDER BY node"
+    
+    query_train = """
+        CALL gds.beta.graphSage.train(
+            'myGraph',
+            {
+                modelName: 'graphsage-mean',
+                nodeLabels: ['Node'],
+                featureProperties: ['id'],
+                aggregator: 'mean',
+                activationFunction: 'sigmoid',
+                sampleSizes: [25, 10],
+                degreeAsProperty: true,
+                epochs: 5,
+                searchDepth: 5,
+                batchSize: 1000,
+                learningRate: 0.01,
+                embeddingSize: 16,
+                negativeSampleWeight: 5.0,
+                includeProperties: true
+            }
+        )
+        """
+
+    query15 = """
+        CALL gds.beta.graphSage.stream('myGraph', {modelName: 'graphsage-mean'})
+        YIELD nodeId, embedding
+        RETURN gds.util.asNode(nodeId).id AS node, embedding
+        ORDER BY node
+        """
 
     result15 = session.run(query15)
     for record in result15:
@@ -279,14 +324,17 @@ def graphSage():
 node1 = 37
 node2 = random.randint(1, 100)
 
-# try:
-#     communityDetection()
-# except Exception as e:
-#     print("Error :", e)
+query_project = (
+                f"CALL gds.graph.project.cypher( "
+                f"'myGraph', "
+                f"'MATCH (n) RETURN id(n) AS id', "
+                f"'MATCH (n)-[:EDGE_TO]->(m) RETURN id(n) AS source, id(m) AS target' "
+                f") "
+                f"YIELD graphName, nodeCount, relationshipCount "
+                f"RETURN graphName, nodeCount, relationshipCount"
+            )
 
-# session.close()
-# driver.close()
-# exit()
+session.run(query_project)
 
 try:
     countNodes()
@@ -343,25 +391,25 @@ try:
 except Exception as e:
     print("Error in clusteringCoefficient: ", e)
 
-# try:
-#     communityDetection()
-# except Exception as e:
-#     print("Error in communityDetection: ", e)
+try:
+    communityDetection()
+except Exception as e:
+    print("Error in communityDetection: ", e)
 
-# try:
-#     pageRank()
-# except Exception as e:
-#     print("Error in pageRank: ", e)
+try:
+    pageRank()
+except Exception as e:
+    print("Error in pageRank: ", e)
 
-# try:
-#     centrality()
-# except Exception as e:
-#     print("Error in centrality: ", e)
+try:
+    centrality()
+except Exception as e:
+    print("Error in centrality: ", e)
 
-# try:
-#     connectedComponents()
-# except Exception as e:
-#     print("Error in connectedComponents: ", e)
+try:
+    connectedComponents()
+except Exception as e:
+    print("Error in connectedComponents: ", e)
 
 # try:
 #     graphSage()
