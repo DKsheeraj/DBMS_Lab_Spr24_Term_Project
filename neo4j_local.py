@@ -157,15 +157,21 @@ def connectedNodes(node_id):
             
 def commonNeighbors(node_id1, node_id2):
     # Query 4: Get the common neighbors of two nodes
-    print("\n\nCommon connections from nodes ", node_id1, " and ", node_id2, " :")
-    query4 = f"PROFILE MATCH (n1)-[:EDGE_TO]->(m)<-[:EDGE_TO]-(n2) WHERE n1.id = {node_id1} AND n2.id = {node_id2} RETURN m"
+    # print("\n\nCommon connections from nodes ", node_id1, " and ", node_id2, " :")
+    query4 = f"PROFILE MATCH (n1)-[:EDGE_TO]->(m)<-[:EDGE_TO]->(n2) WHERE n1.id = {node_id1} AND n2.id = {node_id2} RETURN m"
 
+    count = 0
+    
     result4 = session.run(query4)
     for record in result4:
         node_number = record['m']['id']
         print(node_number, end=" ")
         
-    profile(result4.consume())
+        count += 1
+        
+    # profile(result4.consume())
+    
+    return count
             
 def shortestPath(node_id1, node_id2):
     # Query 5: Get the shortest path between two nodes
@@ -183,7 +189,7 @@ def shortestPath(node_id1, node_id2):
 def allPaths(node_id1, node_id2):
     # Query 6: Get all paths between two nodes
     print("\n\nAll paths between nodes ", node_id1, " and ", node_id2, " :")
-    query6 = f"PROFILE MATCH path = allShortestPaths((n1)-[:EDGE_TO*]-(n2)) WHERE n1.id = {node_id1} AND n2.id = {node_id2} RETURN nodes(path)"
+    query6 = f"PROFILE MATCH path = allShortestPaths((n1)-[:EDGE_TO*]->(n2)) WHERE n1.id = {node_id1} AND n2.id = {node_id2} RETURN nodes(path)"
 
     result6 = session.run(query6)
     for record in result6:
@@ -309,8 +315,11 @@ def communityDetection():
         # communities[community_id].append(node_number) if community_id in communities else communities.update({community_id: [node_number]})
         # Increment the count of nodes for the community_id
         communities[community_id] = communities.get(community_id, 0) + 1 
+    
+    # Use heapq to get the top 10 communities
+    top_10_communities = heapq.nlargest(10, communities.items(), key=lambda x: x[1])    
                   
-    for community_id, nodes in communities.items():
+    for community_id, nodes in top_10_communities:
         # print("Component ID:", community_id, " Number of Nodes:", len(nodes))
         print("Component ID:", community_id, " Number of Nodes:", nodes)
         
@@ -461,6 +470,23 @@ query_project = (
 session.run(query_project)
 
 query_drop = "CALL gds.graph.drop('myGraph')"
+
+for node1 in range(100, 1000):
+    for node2 in range(100, 1000):
+        try:
+            if(commonNeighbors(node1, node2) > 0):
+                print("\n\nCommon connections from nodes ", node1, " and ", node2, " :")
+                break
+        except Exception as e:
+            print("Error in commonNeighbors: ", e)
+        
+session.run(query_drop)
+        
+# # Close the session & driver connection
+session.close()
+driver.close()
+
+exit()
 
 try:
     countNodes()

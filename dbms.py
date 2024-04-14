@@ -7,6 +7,7 @@ from tkinter import ttk
 from neo4j import GraphDatabase
 import re
 from tabulate import tabulate
+import heapq
 
 def parse_profile(profile_string):
     profile_info = {}
@@ -110,7 +111,7 @@ class GraphDatabaseGUI:
         
         # self.left_frame_inner.bind("<Configure>", self.on_configure)
         
-        self.query8_button = ttk.Button(self.left_frame_inner, text="All Paths", style="Custom.TButton", command=self.allPaths, state=tk.DISABLED)
+        self.query8_button = ttk.Button(self.left_frame_inner, text="All Shortest Paths", style="Custom.TButton", command=self.allPaths, state=tk.DISABLED)
         self.query8_button.pack(pady=5)
 
         self.query9_button = ttk.Button(self.left_frame_inner, text="K Length Paths", style="Custom.TButton", command=self.kLengthPaths, state=tk.DISABLED)
@@ -137,8 +138,8 @@ class GraphDatabaseGUI:
         self.query16_button = ttk.Button(self.left_frame_inner, text="Connected Components", style="Custom.TButton", command=self.connectedComponents , state=tk.DISABLED)
         self.query16_button.pack(pady=5)
 
-        self.query17_button = ttk.Button(self.left_frame_inner, text="Graph Sage", style="Custom.TButton", command=self.graphSage , state=tk.DISABLED)
-        self.query17_button.pack(pady=5)
+        # self.query17_button = ttk.Button(self.left_frame_inner, text="Graph Sage", style="Custom.TButton", command=self.graphSage , state=tk.DISABLED)
+        # self.query17_button.pack(pady=5)
         
         # self.query17_button = ttk.Button(root, text="Graph Sage", style="Custom.TButton", command=self.graphSage, state=tk.DISABLED)
         # self.query17_button.pack(pady=5)
@@ -155,6 +156,7 @@ class GraphDatabaseGUI:
         self.image_label.pack(pady=10)
 
     def connect_to_neo4j(self):
+        self.result_label.delete('1.0', tk.END)
         try:
             self.driver = GraphDatabase.driver(self.uri, auth=(self.username, self.password))
             self.session = self.driver.session()
@@ -176,7 +178,7 @@ class GraphDatabaseGUI:
             self.query14_button.config(state=tk.NORMAL)
             self.query15_button.config(state=tk.NORMAL)
             self.query16_button.config(state=tk.NORMAL)
-            self.query17_button.config(state=tk.NORMAL)
+            # self.query17_button.config(state=tk.NORMAL)
 
             # Display image from Neo4j
             # self.display_image_from_neo4j()
@@ -184,6 +186,7 @@ class GraphDatabaseGUI:
             self.result_label.insert(tk.END, f"Failed to connect to Neo4j: {e}\n")
 
     def open_dataset_file(self):
+        self.result_label.delete('1.0', tk.END)
         filename = filedialog.askopenfilename(title="Select Dataset File")
         if filename:
             try:
@@ -197,7 +200,7 @@ class GraphDatabaseGUI:
                         query = (
                             f"MERGE (source:Node {{id: {source}}})"
                             f"MERGE (target:Node {{id: {target}}})"
-                            f"MERGE (source)-[:CONNECTED_TO]->(target)"
+                            f"MERGE (source)-[:EDGE_TO]->(target)"
                         )
                         self.session.run(query)
                 self.result_label.insert(tk.END, "Data loaded into Neo4j successfully!\n")
@@ -205,13 +208,14 @@ class GraphDatabaseGUI:
                 self.result_label.insert(tk.END, f"Error loading data into Neo4j: {e}\n")
 
     def createProjection(self):
+        self.result_label.delete('1.0', tk.END)
         try:
             
             create_query = (
                 f"CALL gds.graph.project.cypher( "
                 f"'myGraph', "
                 f"'MATCH (n) RETURN id(n) AS id', "
-                f"'MATCH (n)-[:CONNECTED_TO]->(m) RETURN id(n) AS source, id(m) AS target' "
+                f"'MATCH (n)-[:EDGE_TO]->(m) RETURN id(n) AS source, id(m) AS target' "
                 f") "
                 f"YIELD graphName, nodeCount, relationshipCount "
                 f"RETURN graphName, nodeCount, relationshipCount"
@@ -225,6 +229,7 @@ class GraphDatabaseGUI:
 
 
     def dropProjection(self):
+        self.result_label.delete('1.0', tk.END)
         try:
             query_drop = "CALL gds.graph.drop('myGraph')"
             self.session.run(query_drop)
@@ -237,6 +242,7 @@ class GraphDatabaseGUI:
 
     
     def countNodes(self):
+        self.result_label.delete('1.0', tk.END)
         try:
             # Query: Get the count of nodes in the graph
             query = "PROFILE MATCH (n) RETURN count(n) AS node_count"
@@ -266,6 +272,7 @@ class GraphDatabaseGUI:
             self.result_label.insert(tk.END, f"Error counting nodes: {e}\n")
 
     def allNodes(self):
+        self.result_label.delete('1.0', tk.END)
         try:
             # Query: Get all nodes in the graph
             query = "PROFILE MATCH (n) RETURN n"
@@ -309,12 +316,14 @@ class GraphDatabaseGUI:
             node_id = node_id_entry.get()
             
             # Execute the query
-            query = f"PROFILE MATCH (n)-[:CONNECTED_TO]->(m) WHERE n.id = {node_id} RETURN m"
+            query = f"PROFILE MATCH (n)-[:EDGE_TO]->(m) WHERE n.id = {node_id} RETURN m"
             result = self.session.run(query)
             
             # Build the string to display in the output box
             self.result_label.insert(tk.END, f"Nodes connected to {node_id}:\n")
             output = " ".join([str(record['m']['id']) for record in result])
+            
+            print("Output:", output)
             
             # Display the output in the result_label
             self.result_label.insert(tk.END, output)
@@ -341,7 +350,7 @@ class GraphDatabaseGUI:
             execute_button.pack_forget()
 
             # Display image from Neo4j
-            self.display_image_from_neo4j()
+            # self.display_image_from_neo4j()
         
         # Create a button to execute the query
         execute_button = ttk.Button(self.root, text="Execute", style="Custom.TButton", command=execute_query)
@@ -371,7 +380,7 @@ class GraphDatabaseGUI:
             node_id2 = node_id2_entry.get()
             
             # Execute the query
-            query = f"PROFILE MATCH (n1)-[:CONNECTED_TO]->(m)<-[:CONNECTED_TO]-(n2) WHERE n1.id = {node_id1} AND n2.id = {node_id2} RETURN m"
+            query = f"PROFILE MATCH (n1)-[:EDGE_TO]->(m)<-[:EDGE_TO]->(n2) WHERE n1.id = {node_id1} AND n2.id = {node_id2} RETURN m"
             result = self.session.run(query)
 
             if result.peek() is None:
@@ -408,7 +417,7 @@ class GraphDatabaseGUI:
             execute_button.pack_forget()
 
             # Display image from Neo4j
-            self.display_image_from_neo4j()
+            # self.display_image_from_neo4j()
         
         # Create a button to execute the query
         execute_button = ttk.Button(self.root, text="Execute", style="Custom.TButton", command=execute_query)
@@ -437,7 +446,7 @@ class GraphDatabaseGUI:
         # Query: Get the shortest path between two nodes
             print(node_id1)
             print(node_id2)
-            query = f"PROFILE MATCH path = shortestPath((n1)-[:CONNECTED_TO*]->(n2)) WHERE n1.id = {node_id1} AND n2.id = {node_id2} RETURN nodes(path)"
+            query = f"PROFILE MATCH path = allShortestPaths((n1)-[:EDGE_TO*]->(n2)) WHERE n1.id = {node_id1} AND n2.id = {node_id2} RETURN nodes(path)"
             
             # Execute the query
             result = self.session.run(query)
@@ -452,6 +461,8 @@ class GraphDatabaseGUI:
                     nodes_in_path = record['nodes(path)']
                     for node in nodes_in_path:
                         result_string += f"{node['id']} "
+                        
+                    break
                             
                 # Display the output in the result_label
                 self.result_label.insert(tk.END, result_string)
@@ -506,7 +517,7 @@ class GraphDatabaseGUI:
             node_id2 = node_id2_entry.get()
             
             # Execute the query
-            query = f"PROFILE MATCH path = allShortestPaths((n1)-[:CONNECTED_TO*]-(n2)) WHERE n1.id = {node_id1} AND n2.id = {node_id2} RETURN nodes(path)"
+            query = f"PROFILE MATCH path = allShortestPaths((n1)-[:EDGE_TO*]->(n2)) WHERE n1.id = {node_id1} AND n2.id = {node_id2} RETURN nodes(path)"
 
             result = self.session.run(query)
             records = list(result)
@@ -516,11 +527,13 @@ class GraphDatabaseGUI:
                 self.result_label.insert(tk.END, "No path found between the nodes.\n")
             else:
                 # Build the string to display in the output box
-                result_string = f"All paths between nodes {node_id1} and {node_id2}: "
+                result_string = f"All paths between nodes {node_id1} and {node_id2}: \n"
                 for record in records:  # Iterate over the records list
                     nodes_in_path = record['nodes(path)']
                     for node in nodes_in_path:
                         result_string += f"{node['id']} "
+                        
+                    result_string += "\n"
 
                 self.result_label.insert(tk.END, result_string)
                             
@@ -573,7 +586,7 @@ class GraphDatabaseGUI:
         node_id2_entry = ttk.Entry(self.root, font=("Sans Serif", 10))
         node_id2_entry.pack()
 
-        k_label = ttk.Label(self.root, text="Enter Node ID 2:", style="Custom.TLabel")
+        k_label = ttk.Label(self.root, text="Enter k:", style="Custom.TLabel")
         k_label.pack()
         
         k_entry = ttk.Entry(self.root, font=("Sans Serif", 10))
@@ -588,7 +601,7 @@ class GraphDatabaseGUI:
             
             # Execute the query
             query =  (
-                f"PROFILE MATCH path = (n1)-[:CONNECTED_TO*{k}]-(n2) "
+                f"PROFILE MATCH path = (n1)-[:EDGE_TO*{k}]->(n2) "
                 f"WHERE n1.id = {node_id1} AND n2.id = {node_id2} "
                 f"RETURN nodes(path)"
             )
@@ -601,11 +614,13 @@ class GraphDatabaseGUI:
                 self.result_label.insert(tk.END, "No such path found between the nodes.\n")
             else:
                 # Build the string to display in the output box
-                result_string = f"{k} length path {node_id1} and {node_id2}: "
+                result_string = f"{k} length path {node_id1} and {node_id2}: \n"
                 for record in records:  # Iterate over the records list
                     nodes_in_path = record['nodes(path)']
                     for node in nodes_in_path:
                         result_string += f"{node['id']} "
+                        
+                    result_string += "\n"
 
                 self.result_label.insert(tk.END, result_string)
                             
@@ -644,8 +659,9 @@ class GraphDatabaseGUI:
         execute_button.pack()
 
     def triangleCount(self):
+        self.result_label.delete('1.0', tk.END)
         # Query 8: Get the count of triangles in the graph
-        query = "PROFILE MATCH (a)-[:CONNECTED_TO]->(b)-[:CONNECTED_TO]->(c)-[:CONNECTED_TO]->(a) RETURN count(DISTINCT [a, b, c]) AS triangle_count"
+        query = "PROFILE MATCH (a)-[:EDGE_TO]->(b)-[:EDGE_TO]->(c)-[:EDGE_TO]->(a) RETURN count(DISTINCT [a, b, c]) AS triangle_count"
 
         result = self.session.run(query)
         
@@ -695,7 +711,7 @@ class GraphDatabaseGUI:
             
             # Execute the query
             query = (
-                f"PROFILE MATCH (a)-[:CONNECTED_TO]->(b)-[:CONNECTED_TO]->(c)-[:CONNECTED_TO]->(a) "
+                f"PROFILE MATCH (a)-[:EDGE_TO]->(b)-[:EDGE_TO]->(c)-[:EDGE_TO]->(a) "
                 f"WHERE a.id = {node_id} OR b.id = {node_id} OR c.id = {node_id} "
                 "RETURN DISTINCT a.id, b.id, c.id"
             )
@@ -764,13 +780,13 @@ class GraphDatabaseGUI:
         
         # Define a function to execute the query when the button is clicked
         def execute_query():
-            # Get the node ID from the entry widget
+            # Get the node ID from the entry widget EDGE_TO
             node_id = node_id_entry.get()
             
             # Query to calculate the clustering coefficient of a node
            
             query1 = (
-                f"PROFILE MATCH (a)-[:CONNECTED_TO]->(b)-[:CONNECTED_TO]->(c)-[:CONNECTED_TO]->(a) "
+                f"PROFILE MATCH (a)-[:EDGE_TO]->(b)-[:EDGE_TO]->(c)-[:EDGE_TO]->(a) "
                 f"WHERE a.id = {node_id} OR b.id = {node_id} OR c.id = {node_id} "
                 "RETURN DISTINCT a.id, b.id, c.id"
             )
@@ -843,7 +859,7 @@ class GraphDatabaseGUI:
         
         # Query to perform community detection using the Louvain algorithm
         query = (
-            f"PROFILE CALL gds.louvain.stream('myGraph') "
+            f"CALL gds.louvain.stream('myGraph') "
             f"YIELD nodeId, communityId "
             f"RETURN gds.util.asNode(nodeId).id AS id, communityId "
             f"ORDER BY [communityId, id] ASC"
@@ -854,26 +870,18 @@ class GraphDatabaseGUI:
         
         # Display the results in the result_label
         self.result_label.insert(tk.END, "Community detection using the Louvain algorithm:\n")
+
+        communities = {}
         for record in result:
             node_number = record['id']
             community_id = record['communityId']
-            self.result_label.insert(tk.END, f"Node: {node_number} Community ID: {community_id}\n")
-
-        summary = result.consume()
-
-        self.result_label.insert(tk.END, f"\n\nProfiling Information:\n\n")
-        #self.result_label.insert(tk.END, f"{summary.profile['args']['string-representation']}\n")
-        profile_info = parse_profile(summary.profile['args']['string-representation'])
-
-        for info in profile_info["operators"]:
-            if info["Operator"] == "Operator": 
-                self.result_label.insert(tk.END, f'Operator\t\t|Page Cache Hits/Misses\t\t\t|Time (ms)\t|DB Hits\t|Memory (Bytes)\t|\n')
-                continue
-
-            self.result_label.insert(tk.END, f'{info["Operator"]}\t\t|')
-            self.result_label.insert(tk.END, f'{info["Page Cache Hits/Misses"]}\t\t\t|{info["Time (ms)"]}\t|{info["DB Hits"]}\t|{info["Memory (Bytes)"]}\t\t|\n')
-
-        self.result_label.insert(tk.END, f'\nTotal Database Accesses: {profile_info["database_accesses"]}\nTotal Allocated Memory: {profile_info["allocated_memory"]}\n\n')
+            communities[community_id] = communities.get(community_id, 0) + 1
+            
+        # Use heapq to get the top 10 communities
+        top_10_communities = heapq.nlargest(10, communities.items(), key=lambda x: x[1])    
+            
+        for community_id, nodes in top_10_communities:
+            self.result_label.insert(tk.END, f"Component ID: {community_id}  Number of Nodes: {nodes}\n")
 
     def pageRank(self):
         # Clear previous results from the result label
@@ -883,35 +891,27 @@ class GraphDatabaseGUI:
         self.result_label.insert(tk.END, "PageRank algorithm:\n")
         
         query12 = (
-            f"PROFILE CALL gds.pageRank.stream('myGraph', {{scaler: 'L1Norm'}}) "
+            f"CALL gds.pageRank.stream('myGraph', {{scaler: 'L1Norm'}}) "
+            # f"CALL gds.pageRank.stream('myGraph') "
             f"YIELD nodeId, score "
             f"RETURN gds.util.asNode(nodeId).id AS node, score "
             f"ORDER BY score DESC"
         )
 
         result12 = self.session.run(query12)
+        top10 = []
         for record in result12:
             node_number = record['node']
             score = record['score']
-            result_string = f"Node: {node_number}, Score: {score}\n"
-            self.result_label.insert(tk.END, result_string)
+            if len(top10) < 10:
+                heapq.heappush(top10, (score, node_number))
+            else:
+                heapq.heappushpop(top10, (score, node_number))
 
-        summary = result12.consume()
-
-        self.result_label.insert(tk.END, f"\n\nProfiling Information:\n\n")
-        #self.result_label.insert(tk.END, f"{summary.profile['args']['string-representation']}\n")
-        profile_info = parse_profile(summary.profile['args']['string-representation'])
-
-        for info in profile_info["operators"]:
-            if info["Operator"] == "Operator": 
-                self.result_label.insert(tk.END, f'Operator\t\t|Page Cache Hits/Misses\t\t\t|Time (ms)\t|DB Hits\t|Memory (Bytes)\t|\n')
-                continue
-
-            self.result_label.insert(tk.END, f'{info["Operator"]}\t\t|')
-            self.result_label.insert(tk.END, f'{info["Page Cache Hits/Misses"]}\t\t\t|{info["Time (ms)"]}\t|{info["DB Hits"]}\t|{info["Memory (Bytes)"]}\t\t|\n')
-
-        self.result_label.insert(tk.END, f'\nTotal Database Accesses: {profile_info["database_accesses"]}\nTotal Allocated Memory: {profile_info["allocated_memory"]}\n\n')
-
+        self.result_label.insert(tk.END, "Top 10 nodes by centrality:\n")
+        for score, node_number in sorted(top10, reverse=True):
+            self.result_label.insert(tk.END, f"Node: {node_number}  Score: {score}\n")
+        
 
     def centrality(self):
         # Clear previous results from the result label
@@ -921,35 +921,27 @@ class GraphDatabaseGUI:
         self.result_label.insert(tk.END, "Centrality measures:\n")
         
         query13 = (
-            f"PROFILE CALL gds.pageRank.stream('myGraph', {{maxIterations: 20, dampingFactor: 0.85}}) "
+            f"CALL gds.pageRank.stream('myGraph', {{maxIterations: 20, dampingFactor: 0.85}}) "
             f"YIELD nodeId, score "
             f"RETURN gds.util.asNode(nodeId).id AS node, score "
             f"ORDER BY score DESC"
         )
         
         result13 = self.session.run(query13)
+        top10 = []
         for record in result13:
             node_number = record['node']
             score = record['score']
-            result_string = f"Node: {node_number}, Score: {score}\n"
-            self.result_label.insert(tk.END, result_string)
+            if len(top10) < 10:
+                heapq.heappush(top10, (score, node_number))
+            else:
+                heapq.heappushpop(top10, (score, node_number))
 
-        summary = result13.consume()
+        self.result_label.insert(tk.END, "Top 10 nodes by centrality:\n")
+        for score, node_number in sorted(top10, reverse=True):
+            self.result_label.insert(tk.END, f"Node: {node_number}  Score: {score}\n")
 
-        self.result_label.insert(tk.END, f"\n\nProfiling Information:\n\n")
-        #self.result_label.insert(tk.END, f"{summary.profile['args']['string-representation']}\n")
-        profile_info = parse_profile(summary.profile['args']['string-representation'])
-
-        for info in profile_info["operators"]:
-            if info["Operator"] == "Operator": 
-                self.result_label.insert(tk.END, f'Operator\t\t|Page Cache Hits/Misses\t\t\t|Time (ms)\t|DB Hits\t|Memory (Bytes)\t|\n')
-                continue
-
-            self.result_label.insert(tk.END, f'{info["Operator"]}\t\t|')
-            self.result_label.insert(tk.END, f'{info["Page Cache Hits/Misses"]}\t\t\t|{info["Time (ms)"]}\t|{info["DB Hits"]}\t|{info["Memory (Bytes)"]}\t\t|\n')
-
-        self.result_label.insert(tk.END, f'\nTotal Database Accesses: {profile_info["database_accesses"]}\nTotal Allocated Memory: {profile_info["allocated_memory"]}\n\n')
-
+        
     def connectedComponents(self):
         # Clear previous results from the result label
         self.result_label.delete('1.0', tk.END)
@@ -957,30 +949,22 @@ class GraphDatabaseGUI:
         # Query 14: Connected components
         self.result_label.insert(tk.END, "Connected components:\n")
         
-        query14 = "PROFILE CALL gds.wcc.stream('myGraph') YIELD nodeId, componentId RETURN gds.util.asNode(nodeId).id AS node, componentId ORDER BY [componentId, node] ASC"
+        query14 = "CALL gds.wcc.stream('myGraph') YIELD nodeId, componentId RETURN gds.util.asNode(nodeId).id AS node, componentId ORDER BY [componentId, node] ASC"
 
         result14 = self.session.run(query14)
+
+        components = {}
         for record in result14:
             node_number = record['node']
             component_id = record['componentId']
-            result_string = f"Node: {node_number}, Component ID: {component_id}\n"
-            self.result_label.insert(tk.END, result_string)
+            components[component_id] = components.get(component_id, 0) + 1
 
-        summary = result14.consume()
+        self.result_label.delete(1.0, tk.END)  # Clear the previous content
+        self.result_label.insert(tk.END, "Component ID: Number of Nodes\n")
+        for component_id, nodes in components.items():
+            self.result_label.insert(tk.END, f"Component ID: {component_id}\t Number of Nodes: {nodes}\n")
 
-        self.result_label.insert(tk.END, f"\n\nProfiling Information:\n\n")
-        #self.result_label.insert(tk.END, f"{summary.profile['args']['string-representation']}\n")
-        profile_info = parse_profile(summary.profile['args']['string-representation'])
-
-        for info in profile_info["operators"]:
-            if info["Operator"] == "Operator": 
-                self.result_label.insert(tk.END, f'Operator\t\t|Page Cache Hits/Misses\t\t\t|Time (ms)\t|DB Hits\t|Memory (Bytes)\t|\n')
-                continue
-
-            self.result_label.insert(tk.END, f'{info["Operator"]}\t\t|')
-            self.result_label.insert(tk.END, f'{info["Page Cache Hits/Misses"]}\t\t\t|{info["Time (ms)"]}\t|{info["DB Hits"]}\t|{info["Memory (Bytes)"]}\t\t|\n')
-
-        self.result_label.insert(tk.END, f'\nTotal Database Accesses: {profile_info["database_accesses"]}\nTotal Allocated Memory: {profile_info["allocated_memory"]}\n\n')
+        
 
     def graphSage(self):
         # Clear previous results from the result label
