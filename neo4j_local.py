@@ -1,6 +1,7 @@
 from neo4j import GraphDatabase
 import random
 import sys
+import heapq
 
 if len(sys.argv) < 2:
     print("Usage: python3 dataset.py <load>")
@@ -46,7 +47,8 @@ if load=='2':
     exit()
 
 if load=='1':
-    with open("sample_dataset.txt", "r") as file:
+    with open("dataset.txt", "r") as file:
+    # with open("sample_dataset.txt", "r") as file:
         for line in file:
             source, target = line.strip().split("\t")
             
@@ -62,32 +64,84 @@ if load=='1':
 else:
     print("Using Data already loaded into Neo4j.")
 
+# Helper functions
+
+import re
+
+def parse_profile(profile_string):
+    profile_info = {}
+
+    # Extracting operator details using regex
+    operator_regex = r'\| (.+?) \| (.+?) \| (.+?) \| (.+?) \| (.+?) \| (.+?) \| (.+?) \| (.+?) \| (.+?) \| (.+?) \|'
+    operator_matches = re.findall(operator_regex, profile_string, re.MULTILINE)
+
+    # If matches found
+    if operator_matches:
+        operators = []
+        for match in operator_matches:
+            operator = {
+                "Operator": match[0].strip(),
+                "Id": match[1].strip(),
+                "Details": match[2].strip(),
+                "Estimated Rows": match[3].strip(),
+                "Rows": match[4].strip(),
+                "DB Hits": match[5].strip(),
+                "Memory (Bytes)": match[6].strip(),
+                "Page Cache Hits/Misses": match[7].strip(),
+                "Time (ms)": match[8].strip(),
+                "Pipeline": match[9].strip()
+            }
+            operators.append(operator)
+        profile_info["operators"] = operators
+
+    # Extracting database accesses and allocated memory using regex
+    database_regex = r'Total database accesses: (\d+), total allocated memory: (\d+)'
+    database_matches = re.search(database_regex, profile_string)
+    if database_matches:
+        profile_info["database_accesses"] = int(database_matches.group(1))
+        profile_info["allocated_memory"] = int(database_matches.group(2))
+
+    return profile_info
+
+def profile(summary):
+    print("\nProfiling Information:")
+    
+    profile_string = summary.profile['args']['string-representation']
+    print(profile_string)
+
+    profile_info = parse_profile(profile_string)
+    print(profile_info)
+
 # Queries
 
 def countNodes():
     # Query 1: Get the count of nodes in the graph
     print("\n\nNumber of nodes in the graph: ")
-    query1 = "MATCH (n) RETURN count(n) AS node_count"
+    query1 = "PROFILE MATCH (n) RETURN count(n) AS node_count"
 
     result1 = session.run(query1)
     for record in result1:
         node_count = record["node_count"]
         print("Total nodes count:", node_count)
         
+    profile(result1.consume())
+        
 def allNodes():
     # Query 2: Get all nodes in the graph
     print("\n\nNodes in the graph: ")
-    query2 = "MATCH (n) RETURN n"
+    query2 = "PROFILE MATCH (n) RETURN n"
 
     result2 = session.run(query2)
     for record in result2:
         node_number = record['n']['id']
         print(node_number, end=" ")
+        
+    profile(result2.consume())
             
 def connectedNodes(node_id):
     # Query 3: Get all nodes connected to a specific node
     print("\n\nNodes that have connection from ", node_id, " :")
-    query3 = f"MATCH (n)-[:EDGE_TO]->(m) WHERE n.id = {node_id} RETURN m"
+    query3 = f"PROFILE MATCH (n)-[:EDGE_TO]->(m) WHERE n.id = {node_id} RETURN m"
     
     count = 0
 
@@ -97,33 +151,39 @@ def connectedNodes(node_id):
         print(node_number, end=" ")
         count += 1
         
+    profile(result3.consume())
+        
     return count
             
 def commonNeighbors(node_id1, node_id2):
     # Query 4: Get the common neighbors of two nodes
     print("\n\nCommon connections from nodes ", node_id1, " and ", node_id2, " :")
-    query4 = f"MATCH (n1)-[:EDGE_TO]->(m)<-[:EDGE_TO]-(n2) WHERE n1.id = {node_id1} AND n2.id = {node_id2} RETURN m"
+    query4 = f"PROFILE MATCH (n1)-[:EDGE_TO]->(m)<-[:EDGE_TO]-(n2) WHERE n1.id = {node_id1} AND n2.id = {node_id2} RETURN m"
 
     result4 = session.run(query4)
     for record in result4:
         node_number = record['m']['id']
         print(node_number, end=" ")
+        
+    profile(result4.consume())
             
 def shortestPath(node_id1, node_id2):
     # Query 5: Get the shortest path between two nodes
     print("\n\nShortest path between nodes ", node_id1, " and ", node_id2, " :")
-    query5 = f"MATCH path = shortestPath((n1)-[:EDGE_TO*]->(n2)) WHERE n1.id = {node_id1} AND n2.id = {node_id2} RETURN nodes(path)"
+    query5 = f"PROFILE MATCH path = shortestPath((n1)-[:EDGE_TO*]->(n2)) WHERE n1.id = {node_id1} AND n2.id = {node_id2} RETURN nodes(path)"
 
     result5 = session.run(query5)
     for record in result5:
         nodes_in_path = record['nodes(path)']
         for node in nodes_in_path:
             print(node['id'], end = " ")
+            
+    profile(result5.consume())
         
 def allPaths(node_id1, node_id2):
     # Query 6: Get all paths between two nodes
     print("\n\nAll paths between nodes ", node_id1, " and ", node_id2, " :")
-    query6 = f"MATCH path = allShortestPaths((n1)-[:EDGE_TO*]-(n2)) WHERE n1.id = {node_id1} AND n2.id = {node_id2} RETURN nodes(path)"
+    query6 = f"PROFILE MATCH path = allShortestPaths((n1)-[:EDGE_TO*]-(n2)) WHERE n1.id = {node_id1} AND n2.id = {node_id2} RETURN nodes(path)"
 
     result6 = session.run(query6)
     for record in result6:
@@ -133,16 +193,17 @@ def allPaths(node_id1, node_id2):
             
         print()
         
+    profile(result6.consume())
+        
 def kLengthPaths(node_id1, node_id2, k):
     # Query 7: Get all paths of length k between two nodes
     print("\n\nAll paths of length ", k, " between nodes ", node_id1, " and ", node_id2, " :")
 
     query7 = (
-        f"MATCH path = (n1)-[:EDGE_TO*{k}]-(n2) "
+        f"PROFILE MATCH path = (n1)-[:EDGE_TO*{k}]-(n2) "
         f"WHERE n1.id = {node_id1} AND n2.id = {node_id2} "
         f"RETURN nodes(path)"
     )
-    
 
     result7 = session.run(query7)
     for record in result7:
@@ -151,30 +212,34 @@ def kLengthPaths(node_id1, node_id2, k):
             print(node['id'], end = " ")
             
         print()
+        
+    profile(result7.consume())
             
 def traingleCount():
     # Query 8: Get the count of triangles in the graph
     print("\n\nNumber of triangles in the graph: ")
-    query8 = "MATCH (a)-[:EDGE_TO]->(b)-[:EDGE_TO]->(c)-[:EDGE_TO]->(a) RETURN count(DISTINCT [a, b, c]) AS triangle_count"
+    query8 = "PROFILE MATCH (a)-[:EDGE_TO]->(b)-[:EDGE_TO]->(c)-[:EDGE_TO]->(a) RETURN count(DISTINCT [a, b, c]) AS triangle_count"
 
     result8 = session.run(query8)
     for record in result8:
         triangle_count = record["triangle_count"]
         print("Total triangles count:", triangle_count)
+        
+    profile(result8.consume())
             
 def trianglesContainingNode(node_id):
     # Query to find all triangles containing a specific node
     print("\n\nTriangles containing node ", node_id, ":")
     query9 = (
-        f"MATCH (a)-[:EDGE_TO]->(b)-[:EDGE_TO]->(c)-[:EDGE_TO]->(a) "
+        f"PROFILE MATCH (a)-[:EDGE_TO]->(b)-[:EDGE_TO]->(c)-[:EDGE_TO]->(a) "
         f"WHERE a.id = {node_id} OR b.id = {node_id} OR c.id = {node_id} "
         "RETURN DISTINCT a.id, b.id, c.id"
     )
     
     count = 0
 
-    result = session.run(query9)
-    for record in result:
+    result9 = session.run(query9)
+    for record in result9:
         count += 1
         
         node_a = record["a.id"]
@@ -182,6 +247,7 @@ def trianglesContainingNode(node_id):
         node_c = record["c.id"]
         print("Triangle ", count, ":", (node_a, node_b, node_c))
         
+    profile(result9.consume())
     return count
             
 def clusteringCoefficient(node_id):
@@ -189,7 +255,7 @@ def clusteringCoefficient(node_id):
     print("\n\nClustering coefficient of node ", node_id, " :", end = " ")
     
     query1 = (
-        f"MATCH (a)-[:EDGE_TO]->(b)-[:EDGE_TO]->(c)-[:EDGE_TO]->(a) "
+        f"PROFILE MATCH (a)-[:EDGE_TO]->(b)-[:EDGE_TO]->(c)-[:EDGE_TO]->(a) "
         f"WHERE a.id = {node_id} OR b.id = {node_id} OR c.id = {node_id} "
         "RETURN DISTINCT a.id, b.id, c.id"
     )
@@ -215,6 +281,9 @@ def clusteringCoefficient(node_id):
         clust_coeff = triangles / (neighbors - triangles)
         
     print(clust_coeff)
+        
+    # profile(result1.consume())
+    # profile(result2.consume())
     
     return clust_coeff
             
@@ -229,11 +298,23 @@ def communityDetection():
         f"ORDER BY [communityId, id] ASC"
     )
     
+    communities = {}
+    
     result11 = session.run(query11)
     for record in result11:
         node_number = record['id']
         community_id = record['communityId']
-        print("Node:", node_number, " Community ID:", community_id)
+        # print("Node:", node_number, " Community ID:", community_id)
+        
+        # communities[community_id].append(node_number) if community_id in communities else communities.update({community_id: [node_number]})
+        # Increment the count of nodes for the community_id
+        communities[community_id] = communities.get(community_id, 0) + 1 
+                  
+    for community_id, nodes in communities.items():
+        # print("Component ID:", community_id, " Number of Nodes:", len(nodes))
+        print("Component ID:", community_id, " Number of Nodes:", nodes)
+        
+    print()
             
 def pageRank():
     # Query 12: PageRank algorithm
@@ -246,12 +327,27 @@ def pageRank():
         f"RETURN gds.util.asNode(nodeId).id AS node, score "
         f"ORDER BY score DESC"
     )
+    
+    top10 = []
 
     result12 = session.run(query12)
     for record in result12:
         node_number = record['node']
         score = record['score']
+        # print("Node:", node_number, " Score:", score)
+        
+        # Maintain a heap of size 10 to keep track of top nodes
+        if len(top10) < 10:
+            heapq.heappush(top10, (score, node_number))
+        else:
+            heapq.heappushpop(top10, (score, node_number))
+    
+    # Print the top 10 nodes and their scores
+    print("Top 10 nodes by centrality: ")
+    for score, node_number in sorted(top10, reverse=True):
         print("Node:", node_number, " Score:", score)
+        
+    print()
             
 def centrality():
     # Query 13: Centrality measures
@@ -265,21 +361,48 @@ def centrality():
     )
     
     result13 = session.run(query13)
+    
+    top10 = []
+    
     for record in result13:
         node_number = record['node']
         score = record['score']
+        # print("Node:", node_number, " Score:", score)
+        
+        # Maintain a heap of size 10 to keep track of top nodes
+        if len(top10) < 10:
+            heapq.heappush(top10, (score, node_number))
+        else:
+            heapq.heappushpop(top10, (score, node_number))
+    
+    # Print the top 10 nodes and their scores
+    print("Top 10 nodes by centrality: ")
+    for score, node_number in sorted(top10, reverse=True):
         print("Node:", node_number, " Score:", score)
+        
+    print()
             
 def connectedComponents():
     # Query 14: Connected components
     print("\n\nConnected components: ")
     query14 = "CALL gds.wcc.stream('myGraph') YIELD nodeId, componentId RETURN gds.util.asNode(nodeId).id AS node, componentId ORDER BY [componentId, node] ASC"
 
+    components = {}
     result14 = session.run(query14)
     for record in result14:
         node_number = record['node']
         component_id = record['componentId']
-        print("Node:", node_number, " Component ID:", component_id)
+        # print("Node:", node_number, " Component ID:", component_id)
+        
+        # components[component_id].append(node_number) if component_id in components else components.update({component_id: [node_number]})
+        # Increment the count of nodes for the component_id
+        components[component_id] = components.get(component_id, 0) + 1    
+                
+    for component_id, nodes in components.items():
+        # print("Component ID:", component_id, " Number of Nodes:", len(nodes))
+        print("Component ID:", component_id, " Number of Nodes:", nodes)
+        
+    print()
             
 def graphSage():
     # Query 15: GraphSAGE algorithm
@@ -320,8 +443,9 @@ def graphSage():
         embedding = record['embedding']
         print("Node:", node_number, " Embedding:", embedding)
             
-            
-node1 = 37
+
+# node1 = 37
+node1 = random.randint(1, 100)
 node2 = random.randint(1, 100)
 
 query_project = (
@@ -336,10 +460,7 @@ query_project = (
 
 session.run(query_project)
 
-try:
-    countNodes()
-except Exception as e:
-    print("Error in countNodes: ", e)
+query_drop = "CALL gds.graph.drop('myGraph')"
 
 try:
     countNodes()
@@ -347,7 +468,8 @@ except Exception as e:
     print("Error in countNodes: ", e)
 
 try:
-    allNodes()
+    # allNodes()
+    pass
 except Exception as e:
     print("Error in allNodes: ", e)
 
@@ -415,6 +537,8 @@ except Exception as e:
 #     graphSage()
 # except Exception as e:
 #     print("Error in graphSage: ", e)
+
+session.run(query_drop)
         
 # # Close the session & driver connection
 session.close()
