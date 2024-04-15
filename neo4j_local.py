@@ -471,23 +471,6 @@ session.run(query_project)
 
 query_drop = "CALL gds.graph.drop('myGraph')"
 
-for node1 in range(100, 1000):
-    for node2 in range(100, 1000):
-        try:
-            if(commonNeighbors(node1, node2) > 0):
-                print("\n\nCommon connections from nodes ", node1, " and ", node2, " :")
-                break
-        except Exception as e:
-            print("Error in commonNeighbors: ", e)
-        
-session.run(query_drop)
-        
-# # Close the session & driver connection
-session.close()
-driver.close()
-
-exit()
-
 try:
     countNodes()
 except Exception as e:
